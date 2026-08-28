@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>442的主人玩的游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e1a;
+            overflow: hidden;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .hint {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.25);
+            font-size: 14px;
+            letter-spacing: 4px;
+            font-weight: 300;
+            pointer-events: none;
+            transition: opacity 1.5s ease;
+            text-shadow: 0 0 20px rgba(0, 180, 255, 0.15);
+            background: rgba(10, 14, 30, 0.4);
+            padding: 8px 24px;
+            border-radius: 30px;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .hint span {
+            display: inline-block;
+            animation: pulseHint 4s ease-in-out infinite;
+        }
+
+        @keyframes pulseHint {
+            0%,
+            100% {
+                opacity: 0.3;
+            }
+            50% {
+                opacity: 0.9;
+            }
+        }
+
+        .loading {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: #0a0e1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.1);
+            font-size: 20px;
+            letter-spacing: 6px;
+            transition: opacity 1.2s ease;
+        }
+        .loading.hide {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @media (max-width: 600px) {
+            .hint {
+                font-size: 11px;
+                padding: 6px 16px;
+                bottom: 24px;
+                letter-spacing: 2px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="loading" id="loading">· 深 · 海 · 陈 · 洋 ·</div>
+
+    <canvas id="canvas"></canvas>
+
+    <div class="hint"><span>✦ 划动或点击 ✦</span></div>
+
+    <script>
+        // ============================================================
+        //  陈 洋  ·  深 海 粒 子 互 动 （手机性能优化版）
+        //  优化：粒子数降至1200，移除阴影和光晕，增强回归力
+        // ============================================================
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let W, H;
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', () => {
+            resize();
+            if (particles.length) {
+                const ratio = Math.min(W / 1200, H / 800);
+                const fontSize = Math.min(W, H) * 0.22;
+                generateParticlesFromText('陈洋', fontSize, ratio);
+            }
+        });
+
+        function dist(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        let particles = [];
+        let mouseX = W / 2;
+        let mouseY = H / 2;
+        let mouseIn = false;
+        let clickWave = 0;
+        let clickCenterX = W / 2;
+        let clickCenterY = H / 2;
+
+        // ---------- 生成粒子（性能优化版） ----------
+        function generateParticlesFromText(text, fontSize, scaleRatio) {
+            const offscreen = document.createElement('canvas');
+            const osCtx = offscreen.getContext('2d');
+
+            const padding = 80;
+            const maxW = W * 0.85;
+            const maxH = H * 0.7;
+            let fs = fontSize || Math.min(W, H) * 0.22;
+            fs = Math.min(fs, maxW / text.length * 1.2);
+            fs = Math.min(fs, maxH * 0.9);
+
+            offscreen.width = Math.min(W, maxW + padding * 2);
+            offscreen.height = Math.min(H, maxH + padding * 2);
+
+            osCtx.fillStyle = '#000';
+            osCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+            osCtx.textAlign = 'center';
+            osCtx.textBaseline = 'middle';
+            osCtx.font = `bold ${fs}px "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif`;
+            osCtx.fillStyle = '#fff';
+            osCtx.fillText(text, offscreen.width / 2, offscreen.height / 2);
+
+            const imageData = osCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+            const data = imageData.data;
+
+            const points = [];
+            const step = 2.0;
+            for (let y = 0; y < offscreen.height; y += step) {
+                for (let x = 0; x < offscreen.width; x += step) {
+                    const idx = (Math.floor(y) * offscreen.width + Math.floor(x)) * 4;
+                    if (data[idx] > 128) {
+                        const sx = x - offscreen.width / 2 + W / 2;
+                        const sy = y - offscreen.height / 2 + H / 2;
+                        points.push({ x: sx, y: sy });
+                    }
+                }
+            }
+
+            // fallback
+            if (points.length < 20) {
+                for (let i = 0; i < 300; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = Math.random() * 200;
+                    points.push({
+                        x: W / 2 + Math.cos(angle) * r,
+                        y: H / 2 + Math.sin(angle) * r * 0.6,
+                    });
+                }
+            }
+
+            // 【性能优化】粒子数量上限降至1200，减轻手机GPU负担
+            let maxParticles = 1200;
+            // 如果是小屏幕，再适当减少
+            if (W < 600) maxParticles = 1000;
+            const limit = Math.min(points.length, maxParticles);
+            const selected = [];
+            if (points.length <= limit) {
+                selected.push(...points);
+            } else {
+                const shuffled = points.sort(() => Math.random() - 0.5);
+                for (let i = 0; i < limit; i++) {
+                    selected.push(shuffled[i]);
+                }
+            }
+
+            const newParticles = selected.map((p) => {
+                const normY = (p.y - H * 0.2) / (H * 0.6);
+                const t = Math.max(0, Math.min(1, normY));
+                const hue = 190 + t * 30;
+                const sat = 70 + t * 20;
+                const lig = 50 + t * 35;
+                const hueShift = (Math.random() - 0.5) * 12;
+                const satShift = (Math.random() - 0.5) * 15;
+                const ligShift = (Math.random() - 0.5) * 15;
+                const isGold = Math.random() < 0.08;
+                const color = isGold ?
+                    `hsl(45, 90%, ${65 + Math.random() * 20}%)` :
+                    `hsl(${hue + hueShift}, ${sat + satShift}%, ${lig + ligShift}%)`;
+                const size = 1.8 + Math.random() * 2.2; // 稍微增大以弥补数量减少
+
+                return {
+                    targetX: p.x,
+                    targetY: p.y,
+                    x: p.x + (Math.random() - 0.5) * 12,
+                    y: p.y + (Math.random() - 0.5) * 12,
+                    vx: 0,
+                    vy: 0,
+                    color: color,
+                    size: size,
+                    phase: Math.random() * Math.PI * 2,
+                    floatAmp: 0.5 + Math.random() * 1.0,
+                    floatSpeed: 0.3 + Math.random() * 0.6,
+                    scatterAngle: Math.random() * Math.PI * 2,
+                    scatterDist: 50 + Math.random() * 150,
+                };
+            });
+
+            particles = newParticles;
+        }
+
+        function init() {
+            const ratio = Math.min(W / 1200, H / 800);
+            const fontSize = Math.min(W, H) * 0.22;
+            generateParticlesFromText('陈洋', fontSize, ratio);
+
+            setTimeout(() => {
+                document.getElementById('loading').classList.add('hide');
+            }, 400);
+
+            animate();
+        }
+
+        // ---------- 更新粒子 ----------
+        function updateParticles() {
+            const mouseInfluence = 180;
+            const mouseStrength = 0.045;
+            // 【性能优化】增强回归力，加快复位速度
+            const returnStrength = 0.055;
+            const damping = 0.92;
+
+            const clickActive = clickWave > 0.01;
+            const waveRadius = clickWave * 500;
+            const wavePower = Math.max(0, Math.sin(clickWave * Math.PI * 2) * 6);
+
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+
+                const floatX = Math.sin(Date.now() * 0.0006 * p.floatSpeed + p.phase) * p.floatAmp;
+                const floatY = Math.cos(Date.now() * 0.0005 * p.floatSpeed + p.phase * 1.3) * p.floatAmp;
+
+                const tx = p.targetX + floatX;
+                const ty = p.targetY + floatY;
+
+                let mx = 0,
+                    my = 0;
+                if (mouseIn) {
+                    const d = dist(p.x, p.y, mouseX, mouseY);
+                    if (d < mouseInfluence && d > 1) {
+                        const strength = (1 - d / mouseInfluence) * mouseStrength;
+                        const angle = Math.atan2(p.y - mouseY, p.x - mouseX);
+                        mx = Math.cos(angle) * strength * 80;
+                        my = Math.sin(angle) * strength * 80;
+                    }
+                }
+
+                let cx = 0,
+                    cy = 0;
+                if (clickActive) {
+                    const d = dist(p.x, p.y, clickCenterX, clickCenterY);
+                    if (d < waveRadius + 50) {
+                        const influence = Math.max(0, 1 - d / (waveRadius + 50));
+                        const angle = Math.atan2(p.y - clickCenterY, p.x - clickCenterX);
+                        const power = influence * wavePower * 1.8;
+                        cx = Math.cos(angle) * power;
+                        cy = Math.sin(angle) * power;
+                    }
+                }
+
+                const dx = tx - p.x;
+                const dy = ty - p.y;
+                p.vx += dx * returnStrength + mx + cx;
+                p.vy += dy * returnStrength + my + cy;
+
+                p.vx *= damping;
+                p.vy *= damping;
+
+                const maxSpeed = 15;
+                const spd = Math.hypot(p.vx, p.vy);
+                if (spd > maxSpeed) {
+                    p.vx = (p.vx / spd) * maxSpeed;
+                    p.vy = (p.vy / spd) * maxSpeed;
+                }
+
+                p.x += p.vx;
+                p.y += p.vy;
+
+                const margin = 100;
+                if (p.x < -margin) p.x = -margin;
+                if (p.x > W + margin) p.x = W + margin;
+                if (p.y < -margin) p.y = -margin;
+                if (p.y > H + margin) p.y = H + margin;
+            }
+
+            if (clickWave > 0) {
+                clickWave *= 0.985;
+                if (clickWave < 0.005) clickWave = 0;
+            }
+        }
+
+        // ---------- 绘制 ----------
+        function drawBackground() {
+            const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.8);
+            grad.addColorStop(0, '#0d2847');
+            grad.addColorStop(0.4, '#091c33');
+            grad.addColorStop(0.8, '#060e1a');
+            grad.addColorStop(1, '#020408');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            const time = Date.now() * 0.0004;
+            const layers = [
+                { amp: 18, freq: 0.008, speed: 0.4, yBase: H * 0.25, alpha: 0.06, color: '#1a5a7a' },
+                { amp: 12, freq: 0.012, speed: 0.6, yBase: H * 0.45, alpha: 0.04, color: '#2a7a9a' },
+                { amp: 8, freq: 0.018, speed: 0.8, yBase: H * 0.65, alpha: 0.03, color: '#3a8aaa' },
+                { amp: 25, freq: 0.005, speed: 0.3, yBase: H * 0.35, alpha: 0.05, color: '#0d3a5a' },
+            ];
+
+            for (const layer of layers) {
+                ctx.beginPath();
+                ctx.moveTo(0, H);
+                for (let x = 0; x <= W; x += 2) {
+                    const y = layer.yBase +
+                        Math.sin(x * layer.freq + time * layer.speed) * layer.amp +
+                        Math.sin(x * layer.freq * 0.6 + time * 0.7 + 1.2) * layer.amp * 0.4;
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(W, H);
+                ctx.closePath();
+                ctx.fillStyle = layer.color;
+                ctx.globalAlpha = layer.alpha;
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            const glowGrad = ctx.createRadialGradient(W / 2, H * 0.6, 0, W / 2, H * 0.6, Math.max(W, H) * 0.5);
+            glowGrad.addColorStop(0, 'rgba(30, 120, 200, 0.04)');
+            glowGrad.addColorStop(0.5, 'rgba(20, 80, 160, 0.03)');
+            glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.03)';
+            for (let i = 0; i < 60; i++) {
+                const sx = (i * 7919 + 123) % W;
+                const sy = (i * 6271 + 456) % H;
+                const brightness = 0.02 + Math.sin(i + time * 0.5) * 0.015;
+                ctx.globalAlpha = Math.max(0, brightness);
+                ctx.beginPath();
+                ctx.arc(sx, sy, 0.6 + Math.sin(i + time) * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function drawParticles() {
+            const time = Date.now() * 0.001;
+
+            // 【性能优化】移除阴影和光晕绘制，只绘制粒子本体
+            for (const p of particles) {
+                const size = p.size * (0.8 + Math.sin(time * 0.8 + p.phase) * 0.2);
+                const alpha = 0.7 + Math.sin(time * 0.6 + p.phase * 1.2) * 0.2;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = alpha;
+                ctx.fill();
+
+                // 内部高光（小开销）
+                if (size > 1.8) {
+                    ctx.globalAlpha = alpha * 0.25;
+                    ctx.beginPath();
+                    ctx.arc(p.x - size * 0.25, p.y - size * 0.25, size * 0.3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                }
+            }
+
+            ctx.globalAlpha = 1;
+
+            // 点击涟漪效果（保留，视觉重要）
+            if (clickWave > 0.01) {
+                const radius = clickWave * 500;
+                const alpha = Math.max(0, Math.sin(clickWave * Math.PI) * 0.5);
+                ctx.strokeStyle = `rgba(100, 220, 255, ${alpha * 0.5})`;
+                ctx.lineWidth = 1.5 + clickWave * 4;
+                ctx.shadowColor = 'rgba(100, 220, 255, 0.2)';
+                ctx.shadowBlur = 20;
+                ctx.beginPath();
+                ctx.arc(clickCenterX, clickCenterY, radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                const radius2 = clickWave * 350;
+                ctx.strokeStyle = `rgba(180, 240, 255, ${alpha * 0.25})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(clickCenterX, clickCenterY, radius2, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function drawDecorations() {
+            ctx.globalAlpha = 0.04;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            ctx.font = '120px "PingFang SC", "Microsoft YaHei", sans-serif';
+            ctx.fillStyle = '#4ac7ff';
+            ctx.fillText('陈洋', W - 40, H - 30);
+
+            ctx.globalAlpha = 0.015;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            ctx.font = '120px "PingFang SC", "Microsoft YaHei", sans-serif';
+            ctx.fillStyle = '#4ac7ff';
+            ctx.fillText('陈洋', W - 40, 30);
+
+            ctx.globalAlpha = 1;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, W, H);
+            drawBackground();
+            drawParticles();
+            drawDecorations();
+        }
+
+        function animate() {
+            updateParticles();
+            render();
+            requestAnimationFrame(animate);
+        }
+
+        // ---------- 事件绑定 ----------
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+            mouseIn = true;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            mouseIn = false;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            clickCenterX = e.clientX - rect.left;
+            clickCenterY = e.clientY - rect.top;
+            clickWave = 1.0;
+            for (const p of particles) {
+                const angle = Math.atan2(p.y - clickCenterY, p.x - clickCenterX);
+                const dist2 = dist(p.x, p.y, clickCenterX, clickCenterY);
+                const power = Math.max(0, 1 - dist2 / 500) * 8;
+                p.vx += Math.cos(angle) * power + (Math.random() - 0.5) * 3;
+                p.vy += Math.sin(angle) * power + (Math.random() - 0.5) * 3;
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            mouseX = touch.clientX - rect.left;
+            mouseY = touch.clientY - rect.top;
+            mouseIn = true;
+        }, { passive: false });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            mouseX = touch.clientX - rect.left;
+            mouseY = touch.clientY - rect.top;
+            mouseIn = true;
+            clickCenterX = mouseX;
+            clickCenterY = mouseY;
+            clickWave = 1.0;
+            for (const p of particles) {
+                const angle = Math.atan2(p.y - clickCenterY, p.x - clickCenterX);
+                const dist2 = dist(p.x, p.y, clickCenterX, clickCenterY);
+                const power = Math.max(0, 1 - dist2 / 500) * 8;
+                p.vx += Math.cos(angle) * power + (Math.random() - 0.5) * 3;
+                p.vy += Math.sin(angle) * power + (Math.random() - 0.5) * 3;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => {
+            mouseIn = false;
+        });
+
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                resize();
+                const ratio = Math.min(W / 1200, H / 800);
+                const fontSize = Math.min(W, H) * 0.22;
+                generateParticlesFromText('陈洋', fontSize, ratio);
+            }, 300);
+        });
+
+        init();
+
+        setTimeout(() => {
+            if (particles.length < 100) {
+                const ratio = Math.min(W / 1200, H / 800);
+                const fontSize = Math.min(W, H) * 0.22;
+                generateParticlesFromText('陈洋', fontSize, ratio);
+            }
+        }, 1000);
+
+        console.log('✦ 陈洋 · 深海粒子 (手机性能优化版) ✦');
+    </script>
+</body>
+</html>
