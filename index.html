@@ -189,7 +189,7 @@
             }
 
             // 【性能优化】粒子数量上限降至1200，减轻手机GPU负担
-            let maxParticles = 1200;
+            let maxParticles = 600;
             // 如果是小屏幕，再适当减少
             if (W < 600) maxParticles = 1000;
             const limit = Math.min(points.length, maxParticles);
